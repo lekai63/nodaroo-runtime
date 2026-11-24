@@ -1,0 +1,17 @@
+{
+  "name": "nodaroo-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "shoes + paseo runtime for nodaroo (Pterodactyl node.js egg)",
+  "main": "index.js",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js && node --check src/main.js && node --check src/shoes.js && node --check src/paseo.js && node --check src/paseo-config.js && node --check src/vibe.js && node --check src/pi.js && node --check src/config.js && node --check src/util.js && node --check src/ps-shim.js"
+  },
+  "dependencies": {
+    "@getpaseo/cli": "0.17.3"
+  }
+}

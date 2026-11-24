@@ -1,0 +1,12 @@
+{
+  "publicHost": "se2.nodaroo.fun",
+  "shoesVersion": "0.3.8",
+  "realitySni": "european-union.europa.eu",
+  "realityDest": "european-union.europa.eu:443",
+  "vmessPath": "/mm",
+  "vmessHost": "klink5-lf.amemv.com",
+  "paseoPort": 6768,
+  "paseoRelay": true,
+  "vibeEnabled": true,
+  "piEnabled": false
+}

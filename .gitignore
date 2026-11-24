@@ -1,0 +1,12 @@
+node_modules/
+.paseo/
+secrets.json
+config.local.json
+paseo-pair.json
+paseo-password.txt
+shoes
+config.yaml
+client.yaml.txt
+shoes.log
+*.log
+.env
