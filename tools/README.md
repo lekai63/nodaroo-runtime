@@ -12,13 +12,13 @@
 用法（在容器里）：
 
 ```sh
-node tools/probe-acp.mjs vibe-acp
-# 或指定绝对路径
-node tools/probe-acp.mjs /home/container/.local/bin/vibe-acp
+node tools/probe-acp.mjs <命令>
+# 例：指定绝对路径
+node tools/probe-acp.mjs /home/container/.local/bin/<acp-agent>
 ```
 
 关注输出：
 - `=== initialize ===` 有 result → ACP 协议基本通
 - `=== session/new ===` 里的 `models` → 这就是 paseo 会看到的模型列表；为 `null` 或空数组即"认不出模型"
-- `ERROR:` → 认证或权限问题（vibe-acp 需要 Mistral AI Studio 登录时会返回 authMethods）
+- `ERROR:` → 认证或权限问题（需要登录的 agent 会返回 authMethods）
 - 超时 → agent 卡住，paseo 侧会判定探测失败

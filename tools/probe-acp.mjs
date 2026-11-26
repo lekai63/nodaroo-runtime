@@ -1,7 +1,13 @@
 // 完整 ACP 探测：initialize -> session/new，看 models 是否上报
 import { spawn } from "node:child_process";
 
-const child = spawn(process.argv[2] || "vibe-acp", [], {
+const target = process.argv[2];
+if (!target) {
+  console.error("usage: node tools/probe-acp.mjs <acp-agent 命令或绝对路径>");
+  process.exit(2);
+}
+
+const child = spawn(target, [], {
   cwd: process.env.HOME,
   env: process.env,
   stdio: ["pipe", "pipe", "pipe"],

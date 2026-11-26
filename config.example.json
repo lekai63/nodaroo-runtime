@@ -7,7 +7,6 @@
   "vmessHost": "klink5-lf.amemv.com",
   "paseoPort": 6768,
   "paseoRelay": true,
-  "vibeEnabled": true,
   "piEnabled": true,
   "opencodeEnabled": true,
   "selfUpdate": true,

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js && node --check src/main.js && node --check src/shoes.js && node --check src/paseo.js && node --check src/paseo-config.js && node --check src/vibe.js && node --check src/native-providers.js && node --check src/config.js && node --check src/util.js && node --check src/ps-shim.js"
+    "check": "node --check index.js && node --check src/main.js && node --check src/shoes.js && node --check src/paseo.js && node --check src/paseo-config.js && node --check src/native-providers.js && node --check src/config.js && node --check src/util.js && node --check src/ps-shim.js"
   },
   "dependencies": {
     "@getpaseo/cli": "0.17.3",

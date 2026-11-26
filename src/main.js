@@ -3,7 +3,6 @@ const { config, PASEO_BIN } = require("./config");
 const { log, sh, startStatusPage } = require("./util");
 const { startShoes } = require("./shoes");
 const { startPaseo, isPaseoRunning } = require("./paseo");
-const { ensureVibeProvider } = require("./vibe");
 const { ensureNativeProviders } = require("./native-providers");
 
 // 依次尝试探针命令，返回第一个成功输出的首行（sh() 失败返回 "ERR ..." 前缀，跳过）。
@@ -57,7 +56,6 @@ function main() {
 
   startShoes();
   startPaseo(() => {
-    ensureVibeProvider();
     ensureNativeProviders();
   });
 
@@ -87,7 +85,6 @@ function main() {
       if (downStreak === 2 || downStreak % 10 === 0) {
         log("[watchdog] restarting paseo daemon");
         startPaseo(() => {
-          ensureVibeProvider();
           ensureNativeProviders();
         });
       }

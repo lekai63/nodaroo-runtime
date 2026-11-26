@@ -3,7 +3,6 @@ const fs = require("fs");
 // 容器内默认 /home/container；本地干跑可用 NODAROO_HOME=/tmp/xxx。
 const H = process.env.NODAROO_HOME || "/home/container";
 const LOCAL_BIN = H + "/.local/bin";
-const VIBE_ACP = LOCAL_BIN + "/vibe-acp";
 const PASEO_HOME = H + "/.paseo";
 const NPM_BIN = H + "/node_modules/.bin";
 const PASEO_BIN = NPM_BIN + "/paseo";
@@ -28,7 +27,6 @@ const DEFAULTS = {
   vmessHost: "klink5-lf.amemv.com",
   paseoPort: 6768,
   paseoRelay: true,
-  vibeEnabled: true,
   piEnabled: true,
   opencodeEnabled: true,
 };
@@ -59,7 +57,6 @@ const secrets = readJson(H + "/secrets.json", {});
 module.exports = {
   H,
   LOCAL_BIN,
-  VIBE_ACP,
   PASEO_HOME,
   NPM_BIN,
   PASEO_BIN,

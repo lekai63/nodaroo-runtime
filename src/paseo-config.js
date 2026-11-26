@@ -5,7 +5,7 @@ const { log, paseoExec } = require("./util");
 // 判定一条既有 provider 配置是否"明显失效"，需要纠正后再写回。
 //
 // 背景（2026-11-24 实测）：在 paseo 客户端 UI 里添加 provider 时，它会写入这样一条：
-//   { "extends":"acp", "command":["vibe-acp"], "env":{}, "enabled":false }
+//   { "extends":"acp", "command":["<裸命令名>"], "env":{}, "enabled":false }
 // 其中 enabled:false 会让 provider-snapshot-manager 的 resolveCatalog 直接 return，
 // 永远不探测模型 —— 表现就是"provider 添加失败 / 认不出模型"。
 // 而本函数原来是"已存在就跳过"，导致这类坏配置永远不会被修正。
@@ -14,7 +14,7 @@ const { log, paseoExec } = require("./util");
 //   1) enabled === false         → 用户意图不明，但禁用状态无法被发现，纠正为 true
 //   2) command 为空/非字符串数组  → 必然无法启动
 //   3) command[0] 不是绝对路径    → 依赖 daemon 的 PATH，容器里不稳定；换成绝对路径
-//   4) env 缺失或为空对象         → 补齐我们提供的 env（含 PATH/HOME/API key）
+//   4) env 缺失或为空对象         → 补齐我们提供的 env（PATH/HOME 白名单）
 function needsFix(existing, wanted) {
   if (!existing || typeof existing !== "object") return "not-an-object";
 
@@ -35,9 +35,8 @@ function needsFix(existing, wanted) {
   const env = existing.env;
   if (!env || typeof env !== "object" || Object.keys(env).length === 0) return "empty-env";
 
-  // 我们明确要注入的键缺失时也纠正（例如 MISTRAL_API_KEY 后来才配上）。
-  // 仅当 wantedEnv 中该键有**非空**值时才要求存在 —— 避免可选变量
-  // （如未配置的 MISTRAL_API_KEY）导致每次都判定为需修复。
+  // 我们明确要注入的键缺失时也纠正。仅当 wantedEnv 中该键有**非空**值时才要求存在 ——
+  // 避免值为空的可选变量导致每次都判定为需修复。
   const wantedEnv = wanted.env || {};
   for (const k of Object.keys(wantedEnv)) {
     const want = wantedEnv[k];
@@ -51,8 +50,7 @@ function needsFix(existing, wanted) {
 
 // provider override 的 env 会明文落盘到 config.json，而 config.json 是其子进程环境的
 // **增量**（daemon 的环境仍然继承）。所以这里只放白名单：不能把所有环境变量都写进去
-// （会泄漏 PASEO_PASSWORD、各类 token）；API key 由各 provider 单独注入。
-// CLI（vibe-acp / pi / opencode）启动时需要 HOME / PATH 等基本变量齐全。
+// （会泄漏 PASEO_PASSWORD、各类 token）。CLI（pi / opencode）启动时需要 HOME / PATH 等基本变量齐全。
 const BASE_ENV_KEEP = ["HOME", "PATH", "LANG", "LC_ALL", "TERM", "SHELL", "TMPDIR", "USER"];
 const BASE_ENV_PREFIX = /^(XDG_|UV_|VIRTUAL_ENV|PYTHON)/;
 
