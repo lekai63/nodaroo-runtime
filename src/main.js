@@ -4,7 +4,7 @@ const { log, sh, startStatusPage } = require("./util");
 const { startShoes } = require("./shoes");
 const { startPaseo, isPaseoRunning } = require("./paseo");
 const { ensureVibeProvider } = require("./vibe");
-const { ensurePiProvider } = require("./pi");
+const { ensureNativeProviders } = require("./native-providers");
 
 // 依次尝试探针命令，返回第一个成功输出的首行（sh() 失败返回 "ERR ..." 前缀，跳过）。
 function firstOk(cmds) {
@@ -58,7 +58,7 @@ function main() {
   startShoes();
   startPaseo(() => {
     ensureVibeProvider();
-    ensurePiProvider();
+    ensureNativeProviders();
   });
 
   const statusPort = parseInt(process.env.SHOES_STATUS_PORT || "", 10);
@@ -88,7 +88,7 @@ function main() {
         log("[watchdog] restarting paseo daemon");
         startPaseo(() => {
           ensureVibeProvider();
-          ensurePiProvider();
+          ensureNativeProviders();
         });
       }
     } catch (e) {

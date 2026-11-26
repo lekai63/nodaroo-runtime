@@ -8,5 +8,6 @@
   "paseoPort": 6768,
   "paseoRelay": true,
   "vibeEnabled": true,
-  "piEnabled": false
+  "piEnabled": true,
+  "opencodeEnabled": true
 }

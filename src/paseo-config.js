@@ -49,6 +49,25 @@ function needsFix(existing, wanted) {
   return null;
 }
 
+// provider override 的 env 会明文落盘到 config.json，而 config.json 是其子进程环境的
+// **增量**（daemon 的环境仍然继承）。所以这里只放白名单：不能把所有环境变量都写进去
+// （会泄漏 PASEO_PASSWORD、各类 token）；API key 由各 provider 单独注入。
+// CLI（vibe-acp / pi / opencode）启动时需要 HOME / PATH 等基本变量齐全。
+const BASE_ENV_KEEP = ["HOME", "PATH", "LANG", "LC_ALL", "TERM", "SHELL", "TMPDIR", "USER"];
+const BASE_ENV_PREFIX = /^(XDG_|UV_|VIRTUAL_ENV|PYTHON)/;
+
+function providerBaseEnv() {
+  const env = {};
+  for (const k of BASE_ENV_KEEP) {
+    if (process.env[k]) env[k] = process.env[k];
+  }
+  // uv / Python 工具链常依赖的变量，存在才带（不写死空值）
+  for (const k of Object.keys(process.env)) {
+    if (BASE_ENV_PREFIX.test(k) && process.env[k]) env[k] = process.env[k];
+  }
+  return env;
+}
+
 // 在 .paseo/config.json 的 agents.providers 里确保一条 provider 配置可用。
 // 已存在且可用 → 跳过；已存在但明显失效 → 纠正后写回；不存在 → 写入。
 function ensureProvider(id, provider) {
@@ -88,6 +107,8 @@ function ensureProvider(id, provider) {
       // env 合并：保留既有自定义项，再补我们的（后者优先）
       env: { ...(existing.env || {}), ...(provider.env || {}) },
     };
+    // 我们的定义不含 extends（内置 provider，非 acp 派生）时，UI 写入的 extends 一并丢掉
+    if (provider.extends === undefined) delete nextEntry.extends;
     log("[paseo] provider " + id + " config is unusable (" + reason + "); fixing");
   } else {
     nextEntry = provider;
@@ -127,4 +148,4 @@ function ensureProvider(id, provider) {
   return true;
 }
 
-module.exports = { ensureProvider, needsFix };
+module.exports = { ensureProvider, needsFix, providerBaseEnv };

@@ -5,11 +5,17 @@ const H = process.env.NODAROO_HOME || "/home/container";
 const LOCAL_BIN = H + "/.local/bin";
 const VIBE_ACP = LOCAL_BIN + "/vibe-acp";
 const PASEO_HOME = H + "/.paseo";
-const PASEO_BIN = H + "/node_modules/.bin/paseo";
+const NPM_BIN = H + "/node_modules/.bin";
+const PASEO_BIN = NPM_BIN + "/paseo";
 
-// 面板不能设任意环境变量：所有子进程统一继承这里。
+// 面板不能设任意环境变量：所有子进程统一继承这里。npm 装的 agent CLI（pi / opencode）
+// 与 paseo 同在 node_modules/.bin，一并放进 PATH，供 paseo 按命令名发现。
 process.env.PATH =
-  LOCAL_BIN + ":" + (process.env.PATH || "/usr/local/bin:/usr/bin:/bin");
+  LOCAL_BIN +
+  ":" +
+  NPM_BIN +
+  ":" +
+  (process.env.PATH || "/usr/local/bin:/usr/bin:/bin");
 
 const DEFAULTS = {
   publicHost: "se2.nodaroo.fun",
@@ -21,7 +27,8 @@ const DEFAULTS = {
   paseoPort: 6768,
   paseoRelay: true,
   vibeEnabled: true,
-  piEnabled: false,
+  piEnabled: true,
+  opencodeEnabled: true,
 };
 
 function readJson(file, fallback) {
@@ -52,6 +59,7 @@ module.exports = {
   LOCAL_BIN,
   VIBE_ACP,
   PASEO_HOME,
+  NPM_BIN,
   PASEO_BIN,
   config,
   secrets,

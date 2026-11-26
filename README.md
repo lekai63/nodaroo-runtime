@@ -5,7 +5,7 @@
 - 薄入口 `index.js`，逻辑按功能拆到 `src/`。
 - 敏感信息全部走 `secrets.json`，**不进 Git**；repo 里只有 `secrets.example.json`。
 - 非敏感配置可放 `config.local.json`，不填则使用 `src/config.js` 的默认值。
-- 当前默认：`publicHost=se2.nodaroo.fun`、shoes 0.3.8、paseo 0.17.3、paseo 监听 `127.0.0.1:6768`、relay 开启；mistral-vibe / pi / Muse Code 的 **CLI 都需自行安装**（见「添加 agent provider」）。
+- 当前默认：`publicHost=se2.nodaroo.fun`、shoes 0.3.8、paseo 0.17.3、paseo 监听 `127.0.0.1:6768`、relay 开启；**paseo + pi + opencode 三个 CLI 都由 `npm install` 自动安装**并注册为 provider（见「默认 provider：pi / opencode」）；mistral-vibe / Muse Code 的 **CLI 仍需自行安装**（见「添加 agent provider」）。
 
 ## 目录
 
@@ -15,9 +15,9 @@ src/
   main.js             # 编排
   shoes.js            # 下载/写 config.yaml/启动 shoes
   paseo.js            # 启动 paseo、生成配对 URI
-  paseo-config.js     # 向 .paseo/config.json 合并 provider
+  paseo-config.js     # 向 .paseo/config.json 合并 provider（含 env 白名单）
   vibe.js             # mistral-vibe ACP provider
-  pi.js               # pi 的扩展点（当前只检测）
+  native-providers.js # paseo 内置 provider：pi / opencode
   config.js           # PATH、路径、config.local.json / secrets.json
   util.js             # log / sh / paseoExec / redact / 状态页
 package.json
@@ -64,10 +64,11 @@ CNB 私有 repo 不能匿名 clone。面板的 `USERNAME` / `ACCESS_TOKEN` 填 C
 4. 用 SFTP 上传两个本地文件（不要提交到 Git）：
    - `secrets.json`：从 `secrets.example.json` 复制，填入旧的 Reality 凭据、用户 ID、`paseoPassword`（自己设的强口令）、可选的 `mistralApiKey`。
    - `config.local.json`（可选）：从 `config.example.json` 复制，改 `publicHost`、端口、开关等。
-5. 点 Start。首次启动会 `npm install`（paseo 约 700 MB，可能几分钟），然后执行 `index.js`。
+5. 点 Start。首次启动会 `npm install`（paseo 约 700 MB，加 pi / opencode，可能几分钟），然后执行 `index.js`。
 6. 看日志：
    - `[shoes] ...` / `shoes check: Configuration valid`
    - `[paseo] ...` / `[paseo] pairing URI written ...`
+   - `[paseo] provider pi configured` / `[paseo] provider opencode configured`（再次启动变为 `already configured and usable`）
    - `[paseo] provider mistral-vibe configured`（如果装了 `vibe-acp`）
 7. 验证通过后，把 `AUTO_UPDATE` 打开；以后 push 到 CNB，下次启动会 `git pull`，随后 `npm install` 再跑 `index.js`。
 
@@ -87,7 +88,7 @@ CNB 私有 repo 不能匿名 clone。面板的 `USERNAME` / `ACCESS_TOKEN` 填 C
 4. 重启；`client.yaml.txt` 会用新 host 重新生成。
 5. 新 server 的 `.paseo` 是新的：重新下载 `paseo-pair.json` 并 `paseo host add`；`secrets.json` 也要重新上传。
 
-`config.local.json` 还可以覆盖 `config.example.json` 里的其它非敏感项（`shoesVersion`、`paseoPort`、`vibeEnabled` 等），不填则用 `src/config.js` 的默认值。启动时如果该文件缺失或没有 `publicHost`，日志会打印一条 `[config] ... using default ...` 警告。
+`config.local.json` 还可以覆盖 `config.example.json` 里的其它非敏感项（`shoesVersion`、`paseoPort`、`vibeEnabled`、`piEnabled`、`opencodeEnabled` 等），不填则用 `src/config.js` 的默认值。启动时如果该文件缺失或没有 `publicHost`，日志会打印一条 `[config] ... using default ...` 警告。
 
 ## secrets.json
 
@@ -128,10 +129,27 @@ SFTP 不是 shell，不能执行 `git pull` / `npm install`；代码更新走 Gi
 Paseo 只是编排层，**自己不带任何 agent CLI**（官方 Docker 镜像也不带）。一个 provider 真正可用要三样齐全：
 
 1. **provider 定义**：`~/.paseo/config.json` 的 `agents.providers.<id>`，只描述「用什么命令启动」。Paseo 自带一份 provider 目录，很多 agent **没装 CLI 时定义就已经在 config.json 里**——所以 `grep` 到 `mistral-vibe` 不能证明它能用。
-2. **CLI 二进制**：必须装在 daemon 主机（本容器）上，且在 paseo 子进程的 PATH 里。本运行时已把 `~/.local/bin` 放到子进程 PATH 最前（`src/config.js:11-12`）。
+2. **CLI 二进制**：必须装在 daemon 主机（本容器）上，且在 paseo 子进程的 PATH 里。本运行时已把 `~/.local/bin` 和 `~/node_modules/.bin` 放到子进程 PATH 最前（`src/config.js`）。
 3. **凭据**：agent 自己的登录态或 API key（如 `MISTRAL_API_KEY`），paseo 不代管。
 
 容器里没有 `sudo`，所有命令在容器 shell 里以 `container` 用户执行即可。
+
+### 默认 provider：pi / opencode（随 `npm install` 自动安装）
+
+`package.json` 的 `dependencies` 固定了 `@getpaseo/cli`（paseo）、`@earendil-works/pi-coding-agent`（pi）、`opencode-ai`（opencode）三个版本，面板启动时的 `npm install` 把它们一并装到 `~/node_modules/.bin`。`opencode-ai` 的 postinstall 会按容器的 CPU（是否支持 AVX2）和 libc（glibc / musl）自动选对应的平台二进制。
+
+`src/native-providers.js` 在 daemon 就绪后把 pi / opencode 注册进 `.paseo/config.json` 的 `agents.providers`：只写 `command`（绝对路径）、`enabled: true` 和 env 白名单，**不写 `extends`**（它们是 paseo 内置 provider，不是 ACP 派生）、**不写 `models`**（模型列表由 CLI 运行时上报）。条目不存在则写入，已存在但不可用（如 `enabled: false`、相对路径命令）则纠正，可用则跳过。
+
+Paseo 只负责拉起 CLI，**凭据要各自配置**，二选一：
+
+- 用 SFTP 上传登录态文件：pi 是 `~/.pi/agent/auth.json`，opencode 是 `~/.local/share/opencode/auth.json`；
+- 或在容器 shell 里跑 `pi` 后 `/login`、`opencode auth login`。面板不能设环境变量，所以 API key 走文件而不是 env。
+
+开关（`config.local.json`）：`"piEnabled": false` / `"opencodeEnabled": false` 可让 runtime 不再注册对应 provider，默认都是 `true`。注意开关只管自动注册：已经写进 `.paseo/config.json` 的条目不会被删，需要在客户端里禁用或删除。
+
+升级版本：改 `package.json` 里对应的版本号 → push → 重启（`npm install` 收敛 `node_modules`，runtime 下次启动把 `command` 指向的仍是同一路径，无需额外操作）。换新 server 后要重新上传两份 auth 文件。
+
+验证：`~/node_modules/.bin/paseo provider diagnostic pi --json --home ~/.paseo`（`opencode` 同理），输出里 `Status: Ready` 表示 daemon 能拉起该 CLI；`Models` 取决于是否已配凭据。
 
 ### Mistral Vibe（本项目可自动注册，但 CLI 要自己装）
 
@@ -142,16 +160,7 @@ Paseo 只是编排层，**自己不带任何 agent CLI**（官方 Docker 镜像�
 3. 重启运行时；日志里应出现 `[paseo] provider mistral-vibe configured` 或 `already configured`。
 4. 验证：`vibe --version`、`~/.local/bin/vibe-acp --help`、`~/node_modules/.bin/paseo provider diagnostic --json`。
 
-> `src/paseo-config.js:22-25` 对已存在的 provider 直接跳过、不覆盖；Paseo 目录自带的 `mistral-vibe` 会保留（其 `command` 通常是 PATH 中的 `vibe-acp`），因此只要二进制在 PATH 上即可，不必强求绝对路径。
-
-### Pi
-
-Paseo 把 Pi 列为原生 provider，但同样要先装 CLI：
-
-1. 装命令（给人用、供 Paseo 通过 PATH 找）：`npm install -g --ignore-scripts @earendil-works/pi-coding-agent`（或 `curl -fsSL https://pi.dev/install.sh | sh`）。Node ≥22.19，镜像已满足；`pi --version` 验证。
-2. 认证：`pi` 里 `/login` 选订阅或 API key provider，或把 key 放进 `~/.pi/agent/auth.json` / 环境变量（如 `MISTRAL_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`）。
-3. 让本 runtime 自动注册 pi provider（用于 paseo 会话）：`package.json` 的 `dependencies` 加 `@earendil-works/pi-coding-agent`（安装后落在 `node_modules/.bin/pi`，对应 `src/pi.js:13` 的检测路径），`config.local.json` 设 `"piEnabled": true`，并在 `src/pi.js` 里取消注释、填入实际 models 后调用 `ensureProvider("pi", {...})`。**目前 `src/pi.js` 只做检测，不会写配置**——这是刻意设计，避免 models 未确定时写坏 `.paseo/config.json`。
-4. `~/.pi/agent/`（settings.json / auth.json / 会话）是运行期状态，不进 Git；可用 `pi` 命令或 SFTP 管理。
+> `src/paseo-config.js` 的 `ensureProvider()` 对已存在且可用的 provider 跳过、不覆盖；Paseo 目录自带的 `mistral-vibe` 会保留（其 `command` 通常是 PATH 中的 `vibe-acp`），因此只要二进制在 PATH 上即可，不必强求绝对路径。
 
 ### Muse Code（Meta）
 
@@ -171,7 +180,7 @@ Paseo 内置且默认启用，通过 `muse serve` 走 MSP，需 Muse ≥1.3.0（
 
 ### 其它 provider：三种添加方式
 
-1. **原生**（Antigravity/`agy`、Claude Code、Codex、GitHub Copilot、fx、Hoplite、Oh My Pi、OpenCode、Pi）：装 CLI → 登录/配 key，多数会自动出现在 Paseo；没出现就在 App 里 **Settings → Hosts → 本机 → Providers → + Provider** 添加（`fx`、`Hoplite` 需要从 Settings 添加）。
+1. **原生**（Antigravity/`agy`、Claude Code、Codex、GitHub Copilot、fx、Hoplite、Oh My Pi、OpenCode、Pi）：pi 和 opencode 已是默认 provider（见上）；其余的装 CLI → 登录/配 key，多数会自动出现在 Paseo；没出现就在 App 里 **Settings → Hosts → 本机 → Providers → + Provider** 添加（`fx`、`Hoplite` 需要从 Settings 添加）。
 2. **ACP 目录**（Gemini CLI、Qwen Code、GLM Agent、goose、Cline、Cursor、Codebuddy Code、Kiro CLI、Mistral Vibe 等 40+）：若条目不是通过 `npx`/`uvx` 启动，先在容器装对应 CLI；再走 Settings → + Provider → 从目录选 Add。缺 CLI 时页面显示 **Not installed**。目录是版本锁定的权威来源：<https://paseo.sh/docs/supported-providers>。
 3. **目录里没有的**：手写 `agents.providers`。ID 必须匹配 `^[a-z][a-z0-9-]*$`；自定义条目必须有 `extends`（一等 provider ID 或 `"acp"`）和 `label`；ACP agent 还要给 `command`（数组，首元素是二进制，其余是参数）。改完执行 `paseo reload`。例：
 

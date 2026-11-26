@@ -1,7 +1,7 @@
 const fs = require("fs");
 const { VIBE_ACP, config, secrets } = require("./config");
 const { log } = require("./util");
-const { ensureProvider } = require("./paseo-config");
+const { ensureProvider, providerBaseEnv } = require("./paseo-config");
 
 function ensureVibeProvider() {
   if (!config.vibeEnabled) {
@@ -25,22 +25,8 @@ function ensureVibeProvider() {
     return;
   }
 
-  // env 必须足够完整：paseo 的 provider override env 会落盘到 config.json，
-  // 且是其子进程环境的增量。若只给 PATH，vibe-acp（Python/uv 安装）可能因缺
-  // HOME / XDG_* / VIRTUAL_ENV 而启动失败。
-  // 但**绝不能把所有环境变量都写进去**（config.json 是明文，会泄漏 PASEO_PASSWORD、
-  // 各类 token）。这里采用白名单：除下列 env 白名单键外，MISTRAL_API_KEY 单独注入。
-  const ENV_KEEP = ["HOME", "PATH", "LANG", "LC_ALL", "TERM", "SHELL", "TMPDIR", "USER"];
-  const env = {};
-  for (const k of ENV_KEEP) {
-    if (process.env[k]) env[k] = process.env[k];
-  }
-  // uv / Python 工具链常依赖的变量，存在才带（不写死空值）
-  for (const k of Object.keys(process.env)) {
-    if (/^(XDG_|UV_|VIRTUAL_ENV|PYTHON)/.test(k) && process.env[k]) {
-      env[k] = process.env[k];
-    }
-  }
+  // API key 绝不能混进 env 白名单：MISTRAL_API_KEY 在下面单独注入。
+  const env = providerBaseEnv();
   if (secrets.mistralApiKey) {
     env.MISTRAL_API_KEY = String(secrets.mistralApiKey);
   }
