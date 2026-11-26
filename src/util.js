@@ -34,10 +34,13 @@ function sh(c) {
 }
 
 // 用 execFile 而不是 shell 拼接，避免 provider JSON 被 shell 展开。
-function paseoExec(bin, args) {
+// 第三参 opts.timeout 只给高频/看护路径收紧（status 探测 10s、stop 30s）：默认 180s 对
+// 首装后的 `pair`/`reload`（要等 daemon 就绪）是安全的，但对 30s 一次的 watchdog
+// 来说，一次卡住就会把看护周期拖到 3 分钟，僵尸 supervisor 要很久才会被处理。
+function paseoExec(bin, args, opts) {
   try {
     return execFileSync(process.execPath, [bin, ...args], {
-      timeout: 180000,
+      timeout: (opts && opts.timeout) || 180000,
       stdio: ["ignore", "pipe", "pipe"],
     }).toString();
   } catch (e) {

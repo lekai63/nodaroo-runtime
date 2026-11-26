@@ -78,16 +78,76 @@ function resolvePaseoPassword() {
   return v;
 }
 
-// 用 paseo 自己的 status 判断，避免重复 spawn 时它打印
-// "Another Paseo daemon is already running" 后退出，日志里像崩了一样。
+// status 探测超时：paseo status 自己的 RPC 超时是 1.5s，正常 2s 内返回；
+// 再留余量给冷启动的 node 加载。watchdog 每 30s 调一次，不能被它拖慢。
+const STATUS_TIMEOUT_MS = 10000;
+// daemon stop 最坏路径：graceful 15s + kill 3s + 终端回收 5s+3s，给到 30s。
+const STOP_TIMEOUT_MS = 30000;
+
+// 一次 status 同时得出两个结论，避免两次探测之间锁状态变化：
+//   lockHeld        → 有没有锁（paseo.pid 存在且锁主 PID 仍活着；status 把它报成 pid）
+//   daemonReachable → daemon 是否**可用**，而不是「锁主进程还活着」
+//
+// paseo 的 pid 锁只证明 supervisor 进程存在（pid-lock.js isPidLockOwnerRunning 只做
+// kill(pid,0)）；worker 就绪后 supervisor 才把 listen 写进锁。worker 卡在启动里时锁主
+// 活着、listen 为 null、永远不会就绪，而 `status` 照样输出 "localDaemon": "running"
+// （listen 已发布但端口无人监听时也是如此，只多一条 connectedDaemon: unreachable）。
+//
+// 2026-11-26 容器实况：PID 139 从 09:54 起就是这种僵尸。旧判定看 localDaemon=running →
+// 「已在跑，跳过 spawn」→ pair 轮询 60s 超时；watchdog 判 not running → 重新 spawn →
+// 新 supervisor 抢锁失败 "Another Paseo daemon is already running" exit 1 → 循环。
+// 所以这里必须看 status 真正连上 daemon 的结论 connectedDaemon=reachable。
 function isPaseoRunning() {
-  const st = paseoExec(PASEO_BIN, [
-    "--json",
-    "--home",
-    PASEO_HOME,
-    "status",
-  ]);
-  return st.indexOf("ERR ") !== 0 && /"localDaemon"\s*:\s*"running"/.test(st);
+  return daemonReachable(statusOutput());
+}
+
+function statusOutput() {
+  return paseoExec(
+    PASEO_BIN,
+    ["--home", PASEO_HOME, "--json", "status"],
+    { timeout: STATUS_TIMEOUT_MS },
+  );
+}
+
+// status 无锁时输出 "pid": null，正则的 \d+ 不会误匹配。
+function lockHeld(st) {
+  return st.indexOf("ERR ") !== 0 && /"pid"\s*:\s*\d+/.test(st);
+}
+
+function daemonReachable(st) {
+  return (
+    st.indexOf("ERR ") !== 0 &&
+    /"connectedDaemon"\s*:\s*"reachable"/.test(st)
+  );
+}
+
+// daemon 在应答但拒绝了我们的凭据（status 输出 auth_required / auth_failed）。
+// 这是「活着且在监听」，只是 CLI 没连上 —— 绝不能当僵尸 stop 掉：那会把一个健康的
+// daemon 杀掉，而根因只是本进程没拿到 PASEO_PASSWORD（如 local-credential 在锁里
+// listen 为 null 时不可用）。只标记、让 pair 流程自己报错。
+function daemonAliveAuthRejected(st) {
+  return /"connectedDaemon"\s*:\s*"auth_(required|failed)"/.test(st);
+}
+
+// 停掉持锁但不可用的 supervisor。paseo stop 对锁主发 SIGTERM 并等它退出（锁随之释放）；
+// supervisor 收到信号后先让 worker 优雅退出，10s 未退则对整个进程树 SIGKILL，所以
+// 不需要 --force。stop 最坏约 15+3+终端回收，见 STOP_TIMEOUT_MS。
+function stopStalePaseo() {
+  const out = paseoExec(PASEO_BIN, ["daemon", "stop", "--home", PASEO_HOME], {
+    timeout: STOP_TIMEOUT_MS,
+  });
+  const last = out.trim().split("\n").pop();
+  if (out.indexOf("ERR ") === 0) {
+    log("[paseo] stop stale daemon failed: " + tailForLog(out));
+    return false;
+  }
+  log("[paseo] stale daemon stopped (" + tailForLog(last) + ")");
+  return true;
+}
+
+function tailForLog(s) {
+  s = String(s || "").trim();
+  return s.length > 200 ? "..." + s.slice(-200) : s;
 }
 
 function startPaseo(onReady) {
@@ -107,10 +167,30 @@ function startPaseo(onReady) {
     process.env.PASEO_PASSWORD = password;
     fs.mkdirSync(PASEO_HOME, { recursive: true });
 
-    if (isPaseoRunning()) {
+    // 一次 status 同时得出两个结论，避免两次探测之间锁状态变化。
+    const st = statusOutput();
+    if (daemonReachable(st)) {
       log("[paseo] daemon already running; reusing existing instance (skip spawn)");
       waitForPaseoAndPair(0, onReady);
       return;
+    }
+
+    // daemon 在应答但凭据被拒：不是僵尸，不动它（见 daemonAliveAuthRejected）。
+    // 也不进 pair 轮询（连不上，只会再报 60s 超时）；日志留给人排查 paseoPassword。
+    if (daemonAliveAuthRejected(st)) {
+      log(
+        "[paseo] daemon is up but rejected our credential; not touching it (check paseoPassword)",
+      );
+      if (onReady) onReady();
+      return;
+    }
+
+    // 有锁但不可用 = 僵尸 supervisor。不停掉它，新 daemon 永远抢不到锁。
+    if (lockHeld(st)) {
+      log(
+        "[paseo] pid lock held but daemon unreachable (stale supervisor); stopping it",
+      );
+      stopStalePaseo();
     }
 
     const p = spawn(

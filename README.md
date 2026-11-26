@@ -70,6 +70,19 @@ CNB 私有 repo 不能匿名 clone。面板的 `USERNAME` / `ACCESS_TOKEN` 填 C
    - `[paseo] provider pi configured` / `[paseo] provider opencode configured`（再次启动变为 `already configured and usable`）
 7. 验证通过后，以后改 repo → push → 重启容器即可，`index.js` 启动时会自动拉取（见「自动从 Git 拉取」）。
 
+### paseo daemon 看护与日志对照
+
+`src/paseo.js` 用 `paseo --json status` 的 **`connectedDaemon: reachable`** 判定 daemon 是否可用，而不是看 pid 锁：paseo 的锁只证明 supervisor 进程活着，worker 卡在启动里时锁主活着、`listen=null`、`status` 仍报 `localDaemon: running`（这种僵尸不会自己恢复，新 daemon 也抢不到锁）。遇到「有锁但不可连」会先 `daemon stop` 再重新拉起。
+
+| 日志 | 含义 |
+| --- | --- |
+| `[paseo] daemon already running; reusing existing instance` | daemon 可连，复用 |
+| `[paseo] pid lock held but daemon unreachable (stale supervisor); stopping it` → `stale daemon stopped` | 清掉僵尸 supervisor 后重启（正常恢复路径） |
+| `[paseo] daemon is up but rejected our credential; not touching it` | daemon 活着但口令不对；**不会杀它**，检查 `secrets.json` 的 `paseoPassword` |
+| `[watchdog] paseo daemon not running (streak=2)` → `restarting paseo daemon` | 每 30s 看护，连续 2 次不可连才处理 |
+
+如果反复出现 `stale supervisor` + `stopping it`，说明 worker 启动阶段反复卡死，要看 `.paseo/daemon.log` 里 worker 卡在哪（而不是重启容器）。
+
 ## 自动从 Git 拉取（self-update）
 
 `index.js` 的第一步是自更新：把 `/home/container` 同步到 Git 远端，再启动 `src/main.js`。**日常更新只需要 push + 重启容器**，不用重新上传目录。
