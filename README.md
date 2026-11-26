@@ -5,12 +5,12 @@
 - 薄入口 `index.js`，逻辑按功能拆到 `src/`。
 - 敏感信息全部走 `secrets.json`，**不进 Git**；repo 里只有 `secrets.example.json`。
 - 非敏感配置可放 `config.local.json`，不填则使用 `src/config.js` 的默认值。
-- 当前默认：`publicHost=se2.nodaroo.fun`、shoes 0.3.8、paseo 0.17.3、paseo 监听 `127.0.0.1:6768`、relay 开启；**paseo + pi + opencode 三个 CLI 都由 `npm install` 自动安装**并注册为 provider（见「默认 provider：pi / opencode」）；mistral-vibe / Muse Code 的 **CLI 仍需自行安装**（见「添加 agent provider」）。
+- 当前默认：`publicHost=se2.nodaroo.fun`、shoes 0.3.8、paseo 0.17.3、paseo 监听 `127.0.0.1:6768`、relay 开启；启动时自动从 Git 拉取代码（见「自动从 Git 拉取」）；**paseo + pi + opencode 三个 CLI 都由 `npm install` 自动安装**并注册为 provider（见「默认 provider：pi / opencode」）；mistral-vibe / Muse Code 的 **CLI 仍需自行安装**（见「添加 agent provider」）。
 
 ## 目录
 
 ```text
-index.js              # MAIN_FILE 入口
+index.js              # MAIN_FILE 入口：自更新（内联，不依赖 src/）+ 启动 src/main
 src/
   main.js             # 编排
   shoes.js            # 下载/写 config.yaml/启动 shoes
@@ -33,7 +33,7 @@ secrets.example.json
 | `GIT_ADDRESS` | CNB 仓库的 HTTPS clone URL | 私有 repo 需要配合 `USERNAME` / `ACCESS_TOKEN` |
 | `BRANCH` | `main` | |
 | `USER_UPLOAD` | `0` | 让面板走 clone/install；设 1 会跳过安装 |
-| `AUTO_UPDATE` | 先 `0` 验证，稳定后 `1` | 启动命令里的 `[[ 0 == "1" ]]`；1 = 每次启动 `git pull` |
+| `AUTO_UPDATE` | 可保持 `0` | 启动命令里的 `[[ 0 == "1" ]]`；1 = 每次启动 `git pull`。不依赖它：`index.js` 自己会拉取（见「自动从 Git 拉取」） |
 | `MAIN_FILE` | `index.js` | |
 | Docker image | `nodejs_24` | pi 要求 ≥22.19；24 已验证 |
 | `NODE_PACKAGES` | 空 | 依赖交给 `package.json` |
@@ -63,14 +63,36 @@ CNB 私有 repo 不能匿名 clone。面板的 `USERNAME` / `ACCESS_TOKEN` 填 C
    `-f` 只覆盖 repo 跟踪的文件，未跟踪的 `.paseo`、`secrets.json`、`config.local.json` 会保留。
 4. 用 SFTP 上传两个本地文件（不要提交到 Git）：
    - `secrets.json`：从 `secrets.example.json` 复制，填入旧的 Reality 凭据、用户 ID、`paseoPassword`（自己设的强口令）、可选的 `mistralApiKey`。
-   - `config.local.json`（可选）：从 `config.example.json` 复制，改 `publicHost`、端口、开关等。
+   - `config.local.json`（可选）：从 `config.example.json` 复制，改 `publicHost`、端口、开关等（`gitRepo` 默认即 GitHub 仓库，一般不用改）。
 5. 点 Start。首次启动会 `npm install`（paseo 约 700 MB，加 pi / opencode，可能几分钟），然后执行 `index.js`。
 6. 看日志：
    - `[shoes] ...` / `shoes check: Configuration valid`
    - `[paseo] ...` / `[paseo] pairing URI written ...`
    - `[paseo] provider pi configured` / `[paseo] provider opencode configured`（再次启动变为 `already configured and usable`）
    - `[paseo] provider mistral-vibe configured`（如果装了 `vibe-acp`）
-7. 验证通过后，把 `AUTO_UPDATE` 打开；以后 push 到 CNB，下次启动会 `git pull`，随后 `npm install` 再跑 `index.js`。
+7. 验证通过后，以后改 repo → push → 重启容器即可，`index.js` 启动时会自动拉取（见「自动从 Git 拉取」）。
+
+## 自动从 Git 拉取（self-update）
+
+`index.js` 的第一步是自更新：把 `/home/container` 同步到 Git 远端，再启动 `src/main.js`。**日常更新只需要 push + 重启容器**，不用重新上传目录。
+
+这段自更新逻辑内联在 `index.js` 里，**不依赖 `src/` 的任何文件**：容器里哪怕只有这一个 `index.js`（比如之前跑的是单文件旧版），也能把整套代码拉下来。
+
+每次启动做的事：
+
+1. 确定远端：`config.local.json` 的 `gitRepo`（默认 `https://github.com/lekai63/nodaroo-runtime`）优先；设为空字符串 `""` 则沿用目录已有的 `origin`（面板 clone 或上传时带了 `.git`）。两者都没有就跳过并打印提示。
+2. `git fetch`，然后 `checkout -f -B <gitBranch> origin/<gitBranch>`：强制对齐远端，服务器上对被跟踪文件的本地修改会被丢弃。未跟踪的 `secrets.json`、`config.local.json`、`.paseo/` 等不受影响；若远端开始跟踪这些运行期文件，会拒绝更新。
+3. 若 `package-lock.json` 与上次安装时不一致（本次更新改了依赖，或上次安装失败），执行 `npm install`。面板自带的 `npm install` 跑在 `index.js` **之前**，装的是拉取前的依赖，所以这一步不能省。
+4. 任何一步失败（网络不通、token 失效、`npm install` 报错）都只打日志并继续用现有代码启动，下次启动重试。`git fetch` 超时 120 s（远端不可达时每次启动会先等这么久），`npm install` 超时 15 min。
+
+一次性配置（之后不用再动）：
+
+- 已经在跑旧版 `index.js` 的容器（包括单文件旧版）：只需上传一次 `index.js` 这一个文件到 `/home/container`，其余文件它启动时自己拉。旧版留下的 `secrets.json`、`.paseo/`、`shoes`、`config.yaml` 都不在仓库里，会原样保留。
+- `gitRepo` 默认是 GitHub 上的 `lekai63/nodaroo-runtime`（公开仓库，不需要 token），不用额外配置。换仓库时在 `config.local.json` 改 `"gitRepo": "https://<host>/<owner>/<repo>"`：用 HTTPS 地址，`git@` 的 SSH 地址在容器里没有密钥；也不要把 token 写进 URL。分支默认 `main`，用 `"gitBranch"` 改。
+- 私有仓库在 `secrets.json` 填 `"gitUser"` 和 `"gitToken"`：GitHub 任意非空用户名 + 只读 fine-grained PAT；CNB 用户名按其页面说明（常见为 `cnb`）+ 只读令牌。token 只经 `GIT_ASKPASS` 脚本传给 git 进程，不进 URL、命令行、日志，也不会被 paseo / agent 进程继承。
+- 关闭：`"selfUpdate": false`。
+
+日志对照：`[update] already up to date at <sha>` / `[update] updated <旧> -> <新>` / `[update] running npm install ...`。`index.js` 自身有改动时，要再重启一次才生效。
 
 ## 换节点 / 换域名
 
@@ -103,6 +125,7 @@ CNB 私有 repo 不能匿名 clone。面板的 `USERNAME` / `ACCESS_TOKEN` 填 C
 | `vmessUserId` | 旧部署文件的 `VMESS_USER_ID`（可选，WS 入站用） |
 | `paseoPassword` | 你的 paseo daemon 密码（强口令） |
 | `mistralApiKey` | 可选；填了会注入 `mistral-vibe` provider 的 `env` |
+| `gitUser` / `gitToken` | 可选；私有 Git 仓库拉取用的用户名与只读令牌（见「自动从 Git 拉取」） |
 
 **不要把 `secrets.json` 提交到 Git。** `.gitignore` 已排除。
 
@@ -114,11 +137,11 @@ CNB 私有 repo 不能匿名 clone。面板的 `USERNAME` / `ACCESS_TOKEN` 填 C
 - 下载 `paseo-pair.json`、`shoes.log`、`config.yaml`；
 - 备份/恢复 `.paseo`（paseo 的 serverId、密钥和会话历史）。
 
-SFTP 不是 shell，不能执行 `git pull` / `npm install`；代码更新走 Git + `AUTO_UPDATE`，SFTP 只负责文件。
+SFTP 不是 shell，不能执行 `git pull` / `npm install`；代码更新由 `index.js` 启动时自动拉取（见「自动从 Git 拉取」），SFTP 只负责 `secrets.json`、`config.local.json` 这类运行期文件。
 
 ## 更新与回滚
 
-- 更新：改 repo → push → `AUTO_UPDATE=1` 时下次启动 `git pull` + `npm install`；`AUTO_UPDATE=0` 时手动 pull 或重新上传。
+- 更新：改 repo → push → 重启容器，`index.js` 启动时自动拉取并对齐远端（见「自动从 Git 拉取」）。
 - 回滚：repo 回退到上一个 commit → push（或切 branch）→ 重启。
 - 不要在服务器上直接改 repo 跟踪的文件（`index.js`、`src/`、`package.json`）；`git pull` 会冲突。运行期配置一律放 `secrets.json` / `config.local.json`。
 

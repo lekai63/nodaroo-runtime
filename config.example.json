@@ -9,5 +9,8 @@
   "paseoRelay": true,
   "vibeEnabled": true,
   "piEnabled": true,
-  "opencodeEnabled": true
+  "opencodeEnabled": true,
+  "selfUpdate": true,
+  "gitRepo": "https://github.com/lekai63/nodaroo-runtime",
+  "gitBranch": "main"
 }

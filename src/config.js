@@ -17,6 +17,8 @@ process.env.PATH =
   ":" +
   (process.env.PATH || "/usr/local/bin:/usr/bin:/bin");
 
+// config.local.json 里的 selfUpdate / gitRepo / gitBranch 由 index.js 的自更新逻辑直接读取
+// （那一步不能依赖本文件），不在这里重复；下面是其余项的默认值。
 const DEFAULTS = {
   publicHost: "se2.nodaroo.fun",
   shoesVersion: "0.3.8",

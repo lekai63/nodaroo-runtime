@@ -9,4 +9,5 @@ config.yaml
 client.yaml.txt
 shoes.log
 *.log
+.nodaroo-askpass.sh
 .env
